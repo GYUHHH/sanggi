@@ -224,7 +224,7 @@ app.get('/test-gemini', async (req, res) => {
 
         return res.status(500).json({
             ok: false,
-            error: 'Gemini 테스트 실패',
+            error: 'AI 테스트 실패',
             detail: error.message
         });
     }
@@ -269,19 +269,19 @@ app.post('/analyze-career', async (req, res) => {
         console.error(error);
 
         return res.status(500).json({
-            error: 'Gemini 분석 실패',
+            error: '분석 실패',
             detail: error.message
         });
     }
 });
 
 app.get('/', (req, res) => {
-    res.send('OCR + Gemini 서버 실행 중');
+    res.send('OCR + AI 서버 실행 중');
 });
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
     console.log(`서버 실행: ${PORT}`);
-    console.log('현재 Gemini 모델:', GEMINI_MODEL);
+    console.log('현재 AI 모델:', GEMINI_MODEL);
 });
