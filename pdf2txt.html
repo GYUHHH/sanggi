@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>생기부 직무 추천 분석기</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <style>
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            padding: 20px;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+
+        .container {
+            max-width: 980px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border: 1px solid #d9dee5;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        h2 {
+            color: #1a202c;
+            border-bottom: 1px solid #d9dee5;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+
+        .upload-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px dashed #b8c2cc;
+            border-radius: 0;
+            text-align: center;
+            background-color: #f8fafc;
+        }
+
+        input[type="file"] {
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        /* 프로그레스 바 스타일 추가 */
+        #progress-container {
+            width: 100%;
+            height: 12px;
+            background-color: #edf2f7;
+            margin-top: 20px;
+            display: none; /* 시작 전엔 숨김 */
+        }
+
+        #progress-bar {
+            width: 0%;
+            height: 100%;
+            background-color: #3182ce;
+            transition: width 0.4s ease;
+        }
+
+        #status {
+            font-weight: bold;
+            color: #3182ce;
+            margin-top: 15px;
+            font-size: 15px;
+            white-space: pre-line;
+        }
+
+        .actions {
+            margin-top: 12px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 14px;
+            border: 1px solid #aeb7c2;
+            border-radius: 0;
+            background: #ffffff;
+            color: #222;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: #f1f5f9;
+        }
+
+        .section-title {
+            margin-top: 22px;
+            margin-bottom: 8px;
+            font-weight: bold;
+            font-size: 15px;
+            color: #222;
+        }
+
+        textarea {
+            width: 100%;
+            height: 460px;
+            padding: 15px;
+            font-size: 14.5px;
+            line-height: 1.7;
+            border: 1px solid #cfd8e3;
+            border-radius: 0;
+            resize: vertical;
+            box-sizing: border-box;
+            background: #fff;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>생기부 직무 추천 분석기</h2>
+
+    <div class="upload-section">
+        <input type="file" id="pdf-file" accept="application/pdf">
+        
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
+
+        <div id="status">생기부 PDF를 선택해주세요. 추출 실패 또는 깨짐이 감지되면 자동으로 OCR을 시도합니다.</div>
+    </div>
+
+    <div class="actions">
+        <button id="copy-btn" type="button">결과 복사</button>
+        <button id="clear-btn" type="button">초기화</button>
+    </div>
+
+    <div class="section-title">결과</div>
+    <textarea id="result" placeholder="여기에 분석 결과가 표시됩니다." readonly></textarea>
+
+    <textarea id="raw-text" class="hidden" readonly></textarea>
+</div>
+
+<script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+    const OCR_API_URL = 'http://localhost:3000/ocr';
+    const ANALYZE_API_URL = 'http://localhost:3000/analyze-career';
+
+    const progressBar = document.getElementById('progress-bar');
+    const progressContainer = document.getElementById('progress-container');
+
+    function updateProgress(percent, color = '#3182ce') {
+        progressContainer.style.display = 'block';
+        progressBar.style.width = percent + '%';
+        progressBar.style.backgroundColor = color;
+    }
+
+    function setStatus(message, color = '#3182ce') {
+        const statusLabel = document.getElementById('status');
+        statusLabel.innerText = message;
+        statusLabel.style.color = color;
+    }
+
+    function cleanUpText(rawText) {
+        let text = rawText;
+        text = text.replace(/([^.?!>\]\)])\n+/g, '$1 ');
+        text = text.replace(/ {2,}/g, ' ');
+        text = text.replace(/문서확인번호[\s:]*[A-Za-z0-9\-]+\s*\([^\)]+\)/gi, '');
+        text = text.replace(/정확인\s*진본[\s\S]*?학교생활세부사항기록부\(학교생활기록부I{1,2}\)/gi, '');
+        text = text.replace(/[가-힣]+초등학교\s*\d{4}년\s*\d{1,2}월\s*\d{1,2}일.*?\d+\/\d+/g, '');
+        text = text.replace(/반\s*\d+\s*번호\s*\d+\s*이름\s*[가-힣]+/g, '');
+        text = text.replace(/gov\.kr/gi, '');
+        text = text.replace(/정부24/g, '');
+        text = text.replace(/\[\s*---\s*\d+\s*페이지\s*---\s*\]/g, '');
+        text = text.replace(/4\.\s*수\s*상\s*경\s*력[\s\S]*?(?=5\.\s*자\s*격\s*증|5\.\s*진\s*로\s*희\s*망|5\.\s*자\s*율\s*탐\s*구)/g, '');
+        text = text.replace(/\[\d학년\]\s*교\s*과\s*과\s*목[\s\S]*?(?=과목\s*세\s*부\s*능\s*력|세\s*부\s*능\s*력\s*및\s*특\s*기\s*사\s*항)/g, '');
+        text = text.replace(/<\s*체육·예술.*?비고\s*성취도\s*성취도[\s\S]*?(?=과목\s*세\s*부\s*능\s*력|세\s*부\s*능\s*력\s*및\s*특\s*기\s*사\s*항)/g, '');
+        text = text.replace(/<\s*교양교과\s*>[\s\S]*?(?=\d+\.|\[\d학년\])/g, '');
+        text = text.replace(/([.?!])\s*\n+/g, '$1\n\n');
+        text = text.replace(/\n{3,}/g, '\n\n');
+        return text.trim();
+    }
+
+    function seemsBrokenKorean(text) {
+        if (!text || !text.trim()) return true;
+        const hangulCount = (text.match(/[가-힣]/g) || []).length;
+        const weirdCount = (text.match(/[§¡²³´μ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒ]/g) || []).length;
+        return hangulCount === 0 || weirdCount > hangulCount * 0.3;
+    }
+
+    async function performOCR(pdf) {
+        let ocrFullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            // OCR 진행률: 20% ~ 50% 사이 배분
+            const ocrProgress = 20 + Math.floor((i / pdf.numPages) * 30);
+            updateProgress(ocrProgress);
+            
+            setStatus(`보안 문서 또는 깨진 텍스트 감지\nOCR 처리 중... (${i} / ${pdf.numPages} 페이지)`, '#3182ce');
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({ scale: 1.3});
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = Math.ceil(viewport.width);
+            canvas.height = Math.ceil(viewport.height);
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            const base64Img = canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+            const response = await fetch(OCR_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: base64Img })
+            });
+            if (!response.ok) throw new Error(`OCR 서버 오류 (${response.status})`);
+            const data = await response.json();
+            ocrFullText += `[ --- ${i} 페이지 --- ]\n${data.text || ''}\n\n`;
+        }
+        return ocrFullText;
+    }
+
+    async function analyzeCareer(finalCleanText) {
+        setStatus('Gemini로 직무 추천 분석 중... (약 10~20초 소요)', '#3182ce');
+        
+        // 분석 단계 프로그레스 가상 애니메이션 (50% -> 95%)
+        let analysisProgress = 50;
+        const interval = setInterval(() => {
+            if (analysisProgress < 95) {
+                analysisProgress += Math.random() * 2;
+                updateProgress(analysisProgress);
+            }
+        }, 600);
+
+        try {
+            const response = await fetch(ANALYZE_API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: finalCleanText })
+            });
+            clearInterval(interval);
+            if (!response.ok) throw new Error(`분석 서버 오류 (${response.status})`);
+            const data = await response.json();
+            return data.result || data.analysis || '';
+        } catch (e) {
+            clearInterval(interval);
+            throw e;
+        }
+    }
+
+    document.getElementById('pdf-file').addEventListener('change', async function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+	progressContainer.style.display = 'block'; 
+    	updateProgress(5);
+
+        const resultBox = document.getElementById('result');
+        const rawTextBox = document.getElementById('raw-text');
+
+        resultBox.value = '';
+        rawTextBox.value = '';
+
+        try {
+            // 시작: 5%
+            updateProgress(5);
+            setStatus('1단계: 기본 텍스트 추출 시도 중...', '#d69e2e');
+
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+            let rawExtractedText = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const textContent = await page.getTextContent();
+                let pageText = '';
+                textContent.items.forEach(item => { pageText += item.str + ' '; });
+                rawExtractedText += pageText + '\n\n';
+                
+                // 추출 단계 진행률: 5% ~ 20%
+                updateProgress(5 + Math.floor((i / pdf.numPages) * 15));
+            }
+
+            if (seemsBrokenKorean(rawExtractedText)) {
+                rawExtractedText = await performOCR(pdf);
+            } else {
+                // OCR 안 하면 50%까지 점프
+                updateProgress(50);
+            }
+
+            const finalCleanText = cleanUpText(rawExtractedText);
+            rawTextBox.value = finalCleanText;
+
+            const analysisResult = await analyzeCareer(finalCleanText);
+
+            resultBox.value = analysisResult;
+            updateProgress(100, '#38a169');
+            setStatus('완료되었습니다.', '#38a169');
+
+        } catch (error) {
+            console.error(error);
+            updateProgress(100, '#e53e3e');
+            setStatus(`오류 발생\n${error.message}`, '#e53e3e');
+        }
+    });
+
+    document.getElementById('copy-btn').addEventListener('click', async function () {
+        const resultBox = document.getElementById('result');
+        if (!resultBox.value.trim()) return alert('복사할 결과가 없습니다.');
+        try {
+            await navigator.clipboard.writeText(resultBox.value);
+            alert('결과를 복사했습니다.');
+        } catch (e) { alert('복사에 실패했습니다.'); }
+    });
+
+    document.getElementById('clear-btn').addEventListener('click', function () {
+        document.getElementById('pdf-file').value = '';
+        document.getElementById('result').value = '';
+        document.getElementById('raw-text').value = '';
+        progressContainer.style.display = 'none';
+        progressBar.style.width = '0%';
+        setStatus('생기부 PDF를 선택해주세요. 추출 실패 또는 깨짐이 감지되면 자동으로 OCR을 시도합니다.');
+    });
+</script>
+
+</body>
+</html>
