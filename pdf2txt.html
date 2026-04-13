@@ -256,6 +256,8 @@
 
         if (looksLikeNarrative(line)) {
             kept.push(line);
+		} else if (countHangul(line) >= 12 && line.length >= 18) {
+			kept.push(line);
         }
     }
 
@@ -267,7 +269,10 @@
     result = result.replace(/([.?!])\s*\n+/g, '$1\n\n');
     result = result.replace(/\n{3,}/g, '\n\n');
     result = result.replace(/ {2,}/g, ' ');
-
+		
+	if (result.replace(/\s/g, '').length < 100) {
+    	return text.trim();
+	}
     return result.trim();
 	}
 
