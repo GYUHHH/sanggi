@@ -137,7 +137,7 @@
     <div class="section-title">결과</div>
     <textarea id="result" placeholder="여기에 분석 결과가 표시됩니다." readonly></textarea>
 
-    <textarea id="raw-text" class="hidden" readonly></textarea>
+    <textarea id="raw-text" readonly></textarea>
 </div>
 
 <script>
@@ -162,7 +162,6 @@
         statusLabel.style.color = color;
     }
 
-    <script>
 	function cleanUpText(rawText) {
     let text = String(rawText || '');
 
@@ -270,8 +269,8 @@
     result = result.replace(/ {2,}/g, ' ');
 
     return result.trim();
-}
-</script>
+	}
+
 
     function seemsBrokenKorean(text) {
         if (!text || !text.trim()) return true;
